@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>夜班費清冊產生器</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --success: #16a34a;
+    --error: #dc2626;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --bg: #f9fafb;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+      "Microsoft JhengHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+  }
+  h1 {
+    font-size: 1.75rem;
+    margin: 0 0 0.5rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .dropzone {
+    display: block;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 2.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--bg);
+  }
+  .dropzone:hover {
+    border-color: var(--primary);
+    background: #eff6ff;
+  }
+  .dropzone.dragover {
+    border-color: var(--primary);
+    background: #dbeafe;
+    transform: scale(1.01);
+  }
+  .dropzone.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .dz-main {
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+  .dz-sub {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .status {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    border-radius: 8px;
+    display: none;
+    font-size: 0.95rem;
+  }
+  .status.show { display: flex; align-items: center; gap: 0.75rem; }
+  .status.loading { background: #eff6ff; color: var(--primary); }
+  .status.success { background: #f0fdf4; color: var(--success); }
+  .status.error   { background: #fef2f2; color: var(--error); }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .help {
+    margin-top: 2rem;
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .help strong { color: var(--text); }
+  .help ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+  .help li { margin-bottom: 0.25rem; }
+  footer {
+    margin-top: 2rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  @media (max-width: 600px) {
+    main { padding: 1rem; }
+    h1 { font-size: 1.4rem; }
+    .card { padding: 1.25rem; }
+    .dropzone { padding: 1.75rem 0.75rem; }
+    .icon { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>夜班費清冊產生器</h1>
+  <p class="subtitle">上傳當月排班表 Excel，自動產出衛福部格式的夜班獎勵人員清冊。</p>
+
+  <div class="card">
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="file-input" accept=".xls,.xlsx" hidden>
+      <div class="icon" aria-hidden="true">📄</div>
+      <div class="dz-main">拖放排班表到此，或點擊選檔</div>
+      <div class="dz-sub">支援 .xls / .xlsx</div>
+    </label>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="help">
+    <strong>使用說明：</strong>
+    <ul>
+      <li>上傳後系統會依排班表中的年份、月份與病房名稱產出清冊檔名</li>
+      <li>身分證字號、填表人、連絡電話留空，請在下載後手動填入</li>
+      <li>全程本機運算，不會上傳到任何外部服務</li>
+    </ul>
+  </div>
+
+  <footer>夜班費清冊產生器 · 本機運算</footer>
+</main>
+
+<script>
+(function () {
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('file-input');
+  const status = document.getElementById('status');
+
+  function setStatus(type, html) {
+    status.className = 'status show ' + type;
+    status.innerHTML = html;
+  }
+  function clearStatus() {
+    status.className = 'status';
+    status.innerHTML = '';
+  }
+  function setBusy(busy) {
+    dropzone.classList.toggle('disabled', busy);
+  }
+
+  async function upload(file) {
+    if (!file) return;
+    const name = (file.name || '').toLowerCase();
+    if (!name.endsWith('.xls') && !name.endsWith('.xlsx')) {
+      setStatus('error', '❌ 只支援 .xls 或 .xlsx 格式，請確認檔案類型');
+      return;
+    }
+
+    setBusy(true);
+    setStatus('loading', '<span class="spinner"></span><span>正在解析排班表並產出清冊…</span>');
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      if (!res.ok) {
+        let detail = '未知錯誤，請截圖聯絡管理員';
+        try {
+          const j = await res.json();
+          if (j && j.detail) detail = j.detail;
+        } catch (_) {}
+        setStatus('error', '❌ ' + detail);
+        return;
+      }
+
+      // Parse filename from Content-Disposition (RFC 5987 filename*=UTF-8''...)
+      const cd = res.headers.get('content-disposition') || '';
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+      const filename = m ? decodeURIComponent(m[1]) : 'roster.xlsx';
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus('success', '✅ 產出完成，已開始下載「' + filename + '」');
+    } catch (err) {
+      setStatus('error', '❌ 網路或伺服器錯誤：' + (err && err.message ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    upload(f);
+    // Reset so the same file can be re-uploaded immediately.
+    fileInput.value = '';
+  });
+
+  ['dragenter', 'dragover'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) upload(f);
+  });
+})();
+</script>
+</body>
+</html>
