@@ -168,6 +168,54 @@ def test_ED_national_reversed_counts_as_half_evening():
     assert classify_shifts(staff).E_half_days == [5]
 
 
+# --- D014: HD 車班 08-20 視為小夜半班 ---
+
+@pytest.mark.parametrize('code', ['HD', '休;HD', '國;HD', 'HD;休', 'HD;國'])
+def test_HD_variants_count_as_half_evening(code):
+    staff = _make_staff({8: code})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [8]
+    assert result.E_full_days == []
+    assert result.N_full_days == []
+
+
+# --- D015: ND 跨日班，當日小夜半 + 隔日大夜整 ---
+
+@pytest.mark.parametrize('code', ['ND', '休;ND', '國;ND', 'ND;休', 'ND;國'])
+def test_ND_variants_split_across_two_days(code):
+    staff = _make_staff({8: code, 9: 'D'})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [8]
+    assert result.N_full_days == [9]
+    assert result.E_full_days == []
+
+
+def test_ND_on_last_day_does_not_overflow_month():
+    # 4 月最後一天 ND，5/1 不應出現在本月清冊
+    daily = {d: '' for d in range(1, 31)}
+    daily[30] = 'ND'
+    staff = _make_staff(daily)
+    result = classify_shifts(staff)
+    assert result.E_half_days == [30]
+    assert result.N_full_days == []
+
+
+def test_consecutive_ND_accumulates_correctly():
+    # 連兩日 ND：第二日同時記 E_half（自己）+ N_full（從前日帶）
+    staff = _make_staff({8: 'ND', 9: 'ND', 10: 'D'})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [8, 9]
+    assert result.N_full_days == [9, 10]
+
+
+def test_ND_followed_by_N_stacks_two_N_full_on_next_day():
+    # 防呆：若 day+1 又是 N 班，會出現同日兩筆 N_full（依計畫決策保留，不去重）
+    staff = _make_staff({8: 'ND', 9: 'N'})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [8]
+    assert result.N_full_days == [9, 9]
+
+
 def test_E_qing_with_marker_is_half_evening():
     staff = _make_staff(
         {7: 'E(請)'},
@@ -187,6 +235,39 @@ def test_E_qing_without_marker_is_not_counted():
     assert result.E_half_days == []
     assert result.E_full_days == []
     assert result.N_full_days == []
+
+
+# --- D016: E 整班請假（下方備註含 16:00~24:00）→ 不計 ---
+
+@pytest.mark.parametrize('code', ['E', '休;E', '國;E', 'E;休', 'E;國'])
+def test_E_variants_with_full_leave_marker_are_excluded(code):
+    staff = _make_staff({14: code}, notes={14: '補假8(16:00~24:00)'})
+    result = classify_shifts(staff)
+    assert result.E_full_days == []
+    assert result.E_half_days == []
+    assert result.N_full_days == []
+
+
+def test_E_without_full_leave_marker_still_counts():
+    # 其他時段的備註不應誤觸排除
+    staff = _make_staff({14: 'E'}, notes={14: '補假8(08:00~17:00)'})
+    assert classify_shifts(staff).E_full_days == [14]
+
+
+# --- D017: E(請) 半班 marker 擴充（20:00~24:00 / 16:00~20:00） ---
+
+def test_E_qing_with_20_24_marker_is_half_evening():
+    staff = _make_staff({20: 'E(請)'}, notes={20: '補假4(20:00~24:00)'})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [20]
+    assert result.E_full_days == []
+
+
+def test_E_qing_with_16_20_marker_is_half_evening():
+    staff = _make_staff({20: 'E(請)'}, notes={20: '補假4(16:00~20:00)'})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [20]
+    assert result.E_full_days == []
 
 
 @pytest.mark.parametrize('code', [
