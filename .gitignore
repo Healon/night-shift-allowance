@@ -10,3 +10,6 @@ __pycache__/
 *.log
 .claude/settings.local.json
 output/
+dist/
+.vendor-cache/
+node_modules/

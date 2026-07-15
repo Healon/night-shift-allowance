@@ -1,0 +1,16 @@
+{
+  "name": "night-shift-allowance-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling for the static web app: WASM smoke test against dist assets.",
+  "devDependencies": {
+    "playwright": "^1.61.1",
+    "pyodide": "314.0.2"
+  },
+  "scripts": {
+    "build:webapp": "python3 scripts/build_webapp.py",
+    "test:wasm": "node scripts/test_wasm.mjs",
+    "test:browser": "node scripts/test_browser.mjs",
+    "serve:dist": "node scripts/serve_dist.mjs"
+  }
+}
