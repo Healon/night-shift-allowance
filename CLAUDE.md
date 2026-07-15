@@ -284,11 +284,10 @@ row 4, 6, 8, 10, ...: 對應人員的補休備註列
 - `webapp/` — `bridge.py`（JSON 介面）＋ module worker ＋ 前端（分階段載入進度、統計預覽表、費率即時重算、Blob 下載）
 - `scripts/test_wasm.mjs` — 用 **dist 實體資產**跑 97 條 pytest ＋出貨版 bridge 端到端（87,200）
 - `scripts/test_browser.mjs` — 無頭 Chromium 驗收：預覽、費率改 500、下載檔公式、錯誤路徑、**全程同源稽核**；可帶網址測線上站台
-- 設計文件 `docs/superpowers/specs/2026-07-15-web-static-pyodide-design.md`（AC1~AC7 全數通過，AC7 待 Lin 在非開發機人工確認）
+- 設計文件 `docs/superpowers/specs/2026-07-15-web-static-pyodide-design.md`：**AC1~AC7 全數通過**（AC7 由 Lin 於 2026-07-15 在非開發機的 Windows 電腦實跑確認，非 macOS 環境也正常）
 - 實測（線上）：冷啟動就緒 10.4 秒、快取後 3.0 秒、傳輸約 13.5MB、解析加預覽 0.1 秒
 
 **未完成**：
-- **AC7 人工驗收**：Lin 在非開發機（院內電腦或手機）實跑一次上傳到下載
 - v1.1 候選：去 pandas 瘦身（13.5MB → 約 6.6MB）、未知班別代碼警告
 
 **下次接力重點**：
