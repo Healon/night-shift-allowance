@@ -26,16 +26,19 @@
 
 ## 當前狀態
 
-- **Sprint**：02 已完成（2026-04-17）
-- **下一步**：Sprint 03 — 易用性與穩健性（身分驗證、Docker 部署、歷史紀錄）
+- **Sprint**：03 已完成（2026-07-15）— 靜態網頁上線
+- **網頁版**：<https://night-shift-roster.netlify.app>（Netlify site id `ea169e5c-d053-4f7c-b1de-96b5450feaf8`）
+- **下一步**：無進行中 Sprint。v1.1 候選 — 去 pandas 瘦身、未知班別代碼警告
+- **維護 SOP**：見 README「維護 SOP」節（改 src → pytest → test_wasm → build → test_browser → deploy）
 - **已驗證基線**：
   - 11501 / 115年1月 → NT$ 88,200
   - 11502 / 115年2月 → NT$ 70,400
   - 11503 / 115年3月 → NT$ 87,200
   - 11504 / 115年4月 → NT$ 39,800（含 D012 JD + D013 ED 規則；D014 HD / D015 ND 引入後總額不變，因 N18W01 該月無 HD/ND 出現）
 - **端到端（CLI）**：`python -m src.main tests/fixtures/11503-N19W01排班表.xls`
-- **端到端（Web）**：`uvicorn web.app:app --port 8000` → `http://localhost:8000` 拖放排班表自動下載
-- **測試**：106/106 綠（parser 9 / classifier 74 / builder 14 / web 9）
+- **端到端（本機 Web）**：`uvicorn web.app:app --port 8000` → `http://localhost:8000` 拖放排班表自動下載
+- **端到端（網頁版）**：`node scripts/test_browser.mjs [網址]`（省略網址則自動起本機 dist 伺服器）
+- **測試**：本機 pytest 106/106 綠（parser 9 / classifier 74 / builder 14 / web 9）；WASM 97/97 綠（`node scripts/test_wasm.mjs`，不含 web 那 9 條 FastAPI 測試）
 
 ---
 
@@ -51,6 +54,9 @@
 8. **不要忽略大夜整班的 `00:00~08:00` 標記**：`N`/`休;N`/`國;N` 若下方同欄有 `00:00~08:00` 代表整班請假，**不列入計算**
 9. **不要忽略小夜整班的 `16:00~24:00` 標記**：`E`/`休;E`/`國;E`/`E;休`/`E;國` 若下方同欄有 `16:00~24:00` 代表整班請假，**不列入計算**（D016）
 10. **不要讓 `insert_rows` 自己處理合併儲存格**：會殘留異常，必須主動清理
+11. **不要把 `dist/` 的資產改成從 CDN 抓**：執行期必須零外部請求（院方封鎖 CDN 也要能用），`scripts/test_browser.mjs` 的同源稽核會擋
+12. **不要把 `scripts/build_webapp.py` 的版本釘點改成浮動**（`latest`、`>=`）：會重演 LESSONS L-2026-07-11-002／005 的「重新部署默默升版」漂移。升級是顯式動作，升完必跑 `node scripts/test_wasm.mjs`
+13. **不要讓 `tests/fixtures`（含真實姓名）進 `dist/`**：build 腳本有白名單檢查，不要為了方便繞過它
 
 ---
 
@@ -182,6 +188,9 @@ row 4, 6, 8, 10, ...: 對應人員的補休備註列
 - `SPEC.md` — 完整需求與技術規格
 - `CLAUDE.md` — 本檔（工作指南）
 - `DECISION_LOG.md` — 決策記錄（班別規則、費率確認）
+- `docs/superpowers/specs/2026-07-15-web-static-pyodide-design.md` — 網頁版部署設計（AC1~AC7）
+- `src/` — 計算核心（CLI／本機 Web／網頁版三者共用）
+- `webapp/` — 網頁版前端與 `bridge.py`；`scripts/build_webapp.py` 組成 `dist/` 部署
 - `tests/fixtures/11503-N19W01排班表.xls` — 測試用排班表
 - `templates/衛生福利部夜班津貼示範.xlsx` — 清冊範本
 - `samples/SAMPLE_OUTPUT.xlsx` — 驗證過的產出範例
@@ -264,4 +273,34 @@ row 4, 6, 8, 10, ...: 對應人員的補休備註列
 - **檔名保留原始輸入**（tempfile 用 `mkdtemp` + 原檔名複製）— 因為 `parse_schedule` 從檔名 stem 擷取 ward_code（`11503-N19W01` 格式），不能被 tempfile 的隨機檔名蓋掉
 - **錯誤訊息分級**：副檔名錯 → 400 固定訊息；`ValueError` → 400 包含 parser 具體訊息；其他 Exception → 400 包含訊息但標註「請確認 Excel」，避免暴露 traceback
 - **`TestClient` 需要 httpx**（FastAPI 0.110+），已加入 requirements 避免跑 pytest 時缺依賴
+
+---
+
+## Sprint 03 接力摘要（2026-07-15）
+
+**完成**：
+- **靜態網頁上線**：<https://night-shift-roster.netlify.app>，Pyodide（WASM 版 CPython）在使用者瀏覽器內跑**同一份 `src/`**，計算程式零修改
+- `scripts/build_webapp.py` — 組裝 `dist/`：釘死 Pyodide 314.0.2 與所有 wheel（sha256 驗證）、把 openpyxl／et_xmlfile 補進 vendored lockfile、產 `src.zip`＋`version.json`、dist 白名單檢查
+- `webapp/` — `bridge.py`（JSON 介面）＋ module worker ＋ 前端（分階段載入進度、統計預覽表、費率即時重算、Blob 下載）
+- `scripts/test_wasm.mjs` — 用 **dist 實體資產**跑 97 條 pytest ＋出貨版 bridge 端到端（87,200）
+- `scripts/test_browser.mjs` — 無頭 Chromium 驗收：預覽、費率改 500、下載檔公式、錯誤路徑、**全程同源稽核**；可帶網址測線上站台
+- 設計文件 `docs/superpowers/specs/2026-07-15-web-static-pyodide-design.md`（AC1~AC7 全數通過，AC7 待 Lin 在非開發機人工確認）
+- 實測（線上）：冷啟動就緒 10.4 秒、快取後 3.0 秒、傳輸約 13.5MB、解析加預覽 0.1 秒
+
+**未完成**：
+- **AC7 人工驗收**：Lin 在非開發機（院內電腦或手機）實跑一次上傳到下載
+- v1.1 候選：去 pandas 瘦身（13.5MB → 約 6.6MB）、未知班別代碼警告
+- repo 仍為 local-only，無 git remote（雙機同步與備份待辦）
+
+**下次接力重點**：
+- 規則變更（D018）走 README「維護 SOP」六步，網頁版與 CLI 共用 `src/`，改一次同步生效
+- 升級 Pyodide 或套件版本前先看 `scripts/build_webapp.py` 頂端釘版常數，升完必跑 `test_wasm.mjs`
+- 部署指令：`netlify deploy --dir dist --site ea169e5c-d053-4f7c-b1de-96b5450feaf8 --prod --no-build`（本機 Netlify CLI 已登入）
+
+**關鍵決策**：
+- **不採 GAS**：Lin 確認不需帳號與歷史紀錄後，GAS 的伺服器端優勢無用武之地，只剩「三模組全部重寫 JS＋74 條 classifier 測試重建＋規則月月演化雙軌維護」的成本。Pyodide 路線讓 `src/` 零修改（DECISION_LOG 三個月改六次，這是決定性理由）
+- **資產全自託管、版本釘死、執行期零外部請求**：院方若封鎖 CDN 不受影響；杜絕 LESSONS L-2026-07-11-002／005 的「重新部署默默升版」漂移
+- **module worker**：Pyodide 314 已移除 classic worker（`importScripts`）支援，worker 必須是 `type: 'module'`＋`import { loadPyodide } from './vendor/pyodide/pyodide.mjs'`
+- **Netlify MCP 的 deploy 代理不能用**（14MB 上傳一律 400，疑似函式 payload 上限），改用**本機已登入的 Netlify CLI** 直接部署
+- **`test_wasm.mjs` 的 openpyxl／et_xmlfile 走 `micropip emfs:` 裝 dist 實體 wheel**：Node 版 loader 不從 `indexURL` 取 lockfile 之外的 wheel（瀏覽器才走該路徑，已由 `test_browser.mjs` 實證），但仍確保測到的就是出貨的那份 bytes
 

@@ -1,7 +1,8 @@
-// Headless-browser acceptance test for the built dist/ (AC3/AC4/AC5/AC6
-// local edition): serves dist, drives the real UI in Chromium, audits that
-// every network request is same-origin, and verifies the downloaded xlsx.
-// Usage: python3 scripts/build_webapp.py && node scripts/test_browser.mjs
+// Headless-browser acceptance test (AC3/AC4/AC5/AC6): drives the real UI in
+// Chromium, audits that every network request is same-origin, and verifies
+// the downloaded xlsx.
+//   node scripts/test_browser.mjs              → serves dist/ locally
+//   node scripts/test_browser.mjs <url>        → tests a deployed site
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,7 +12,8 @@ import { chromium } from 'playwright';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8791;
-const BASE = `http://127.0.0.1:${PORT}`;
+const TARGET = process.argv[2];
+const BASE = (TARGET || `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
 const FIXTURE = path.join(ROOT, 'tests', 'fixtures', '11503-N19W01排班表.xls');
 const EXPECT_NAME = '11503-N19W01_夜班費清冊_11病房.xlsx';
 
@@ -20,24 +22,28 @@ const fail = (msg) => {
   process.exit(1);
 };
 
-// -- static server --------------------------------------------------------
-const server = spawn(process.execPath, [path.join(ROOT, 'scripts', 'serve_dist.mjs'), String(PORT)], {
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-process.on('exit', () => server.kill());
-await new Promise((resolve, reject) => {
-  const t0 = Date.now();
-  const poll = async () => {
-    try {
-      const r = await fetch(`${BASE}/version.json`);
-      if (r.ok) return resolve(null);
-    } catch (_) { /* not up yet */ }
-    if (Date.now() - t0 > 15000) return reject(new Error('serve_dist 未在 15 秒內就緒'));
-    setTimeout(poll, 200);
-  };
-  poll();
-});
-console.log('[ok] 本機伺服器就緒 ' + BASE);
+// -- static server (skipped when testing a deployed URL) ------------------
+if (!TARGET) {
+  const server = spawn(process.execPath, [path.join(ROOT, 'scripts', 'serve_dist.mjs'), String(PORT)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  process.on('exit', () => server.kill());
+  await new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const poll = async () => {
+      try {
+        const r = await fetch(`${BASE}/version.json`);
+        if (r.ok) return resolve(null);
+      } catch (_) { /* not up yet */ }
+      if (Date.now() - t0 > 15000) return reject(new Error('serve_dist 未在 15 秒內就緒'));
+      setTimeout(poll, 200);
+    };
+    poll();
+  });
+  console.log('[ok] 本機伺服器就緒 ' + BASE);
+} else {
+  console.log('[ok] 測試部署站台 ' + BASE);
+}
 
 // -- browser ---------------------------------------------------------------
 const browser = await chromium.launch({ headless: true });
