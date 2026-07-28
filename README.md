@@ -21,7 +21,7 @@
 1. **`README.md`**（本檔）— 專案總覽與使用方式
 2. **`CLAUDE.md`** — Claude Code 工作指南（含絕對不要做的事、規則速查、測試驗收基準）
 3. **`SPEC.md`** — 完整需求與技術規格
-4. **`DECISION_LOG.md`** — 業務規則決策記錄（D001~D018）
+4. **`DECISION_LOG.md`** — 業務規則決策記錄（D001~D019）
 5. **`docs/superpowers/specs/2026-07-15-web-static-pyodide-design.md`** — 網頁版部署設計
 6. **`SPRINT_03.md`** — 最近一次 Sprint 任務清單
 
@@ -148,7 +148,7 @@ node scripts/test_browser.mjs https://night-shift-roster.netlify.app   # 6. 線�
 - ✅ **Sprint 02**：FastAPI Web UI（拖放上傳 + 自動下載）
 - ✅ **Sprint 03**：靜態網頁部署（Pyodide 在瀏覽器內跑同一份 Python，公開網址、免安裝、資料不外傳）
 
-**v1.1 候選**：去 pandas 瘦身（13.5MB → 約 6.6MB）、未知班別代碼警告。
+**v1.1 候選**：去 pandas 瘦身（13.5MB → 約 6.6MB）。未知班別代碼警告已由 **D019 裁定不做**，未裁定的代碼維持靜默計為 0，改由人工認證。
 
 ---
 
