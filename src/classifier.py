@@ -49,6 +49,9 @@ def classify_shifts(staff: StaffRecord) -> ShiftCount:
         elif code in ('HD', '休;HD', '國;HD', 'HD;休', 'HD;國'):
             # HD 車班 08-20，後段 17-20 屬小夜時段，視為小夜半班（D014）
             result.E_half_days.append(day)
+        elif code in ('FD', '休;FD', '國;FD', 'FD;休', 'FD;國'):
+            # FD 班 08-12/17-21，後段 17-21 共 4 小時屬小夜時段，視為小夜半班（D018）
+            result.E_half_days.append(day)
         elif code in ('ND', '休;ND', '國;ND', 'ND;休', 'ND;國'):
             # ND 跨日：當日 21-24 小夜半 + 隔日 00-08 大夜整（D015）
             # 月底 ND 因 day+1 不存在於 daily_codes，N_full carryover 自然不會被加上

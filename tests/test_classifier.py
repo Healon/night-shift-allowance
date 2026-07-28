@@ -179,6 +179,17 @@ def test_HD_variants_count_as_half_evening(code):
     assert result.N_full_days == []
 
 
+# --- D018: FD 班 08-12/17-21 視為小夜半班 ---
+
+@pytest.mark.parametrize('code', ['FD', '休;FD', '國;FD', 'FD;休', 'FD;國'])
+def test_FD_variants_count_as_half_evening(code):
+    staff = _make_staff({8: code})
+    result = classify_shifts(staff)
+    assert result.E_half_days == [8]
+    assert result.E_full_days == []
+    assert result.N_full_days == []
+
+
 # --- D015: ND 跨日班，當日小夜半 + 隔日大夜整 ---
 
 @pytest.mark.parametrize('code', ['ND', '休;ND', '國;ND', 'ND;休', 'ND;國'])
@@ -355,7 +366,7 @@ def test_grand_totals_match_baseline(fixture_xls_path):
     ('11501-N19W01排班表.xls', 66, 21, 96, 88_200),
     ('11502-N19W01排班表.xls', 56,  6, 78, 70_400),
     ('11503-N19W01排班表.xls', 80, 12, 88, 87_200),
-    ('11504-N18W01排班表.xls', 49, 11, 30, 39_800),
+    ('11504-N18W01排班表.xls', 49, 12, 30, 40_000),
 ])
 def test_monthly_baselines(
     fixture_name, expected_e_full, expected_e_half, expected_n_full, expected_total

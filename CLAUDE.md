@@ -34,11 +34,11 @@
   - 11501 / 115年1月 → NT$ 88,200
   - 11502 / 115年2月 → NT$ 70,400
   - 11503 / 115年3月 → NT$ 87,200
-  - 11504 / 115年4月 → NT$ 39,800（含 D012 JD + D013 ED 規則；D014 HD / D015 ND 引入後總額不變，因 N18W01 該月無 HD/ND 出現）
+  - 11504 / 115年4月 → NT$ 40,000（含 D012 JD + D013 ED + D018 FD 規則；D014 HD / D015 ND 引入後總額不變，因 N18W01 該月無 HD/ND 出現）
 - **端到端（CLI）**：`python -m src.main tests/fixtures/11503-N19W01排班表.xls`
 - **端到端（本機 Web）**：`uvicorn web.app:app --port 8000` → `http://localhost:8000` 拖放排班表自動下載
 - **端到端（網頁版）**：`node scripts/test_browser.mjs [網址]`（省略網址則自動起本機 dist 伺服器）
-- **測試**：本機 pytest 106/106 綠（parser 9 / classifier 74 / builder 14 / web 9）；WASM 97/97 綠（`node scripts/test_wasm.mjs`，不含 web 那 9 條 FastAPI 測試）
+- **測試**：本機 pytest 111/111 綠（parser 9 / classifier 79 / builder 14 / web 9）；WASM 102/102 綠（`node scripts/test_wasm.mjs`，不含 web 那 9 條 FastAPI 測試）
 
 ---
 
@@ -48,7 +48,7 @@
 2. **不要用 `data_only=True` 開啟後再存檔**：會把所有公式變成死值，永久遺失
 3. **不要從零建立清冊 Excel**：一定要**以範本為基底**，保留原有樣式與合併儲存格
 4. **不要只處理有夜班的人**：**全部人員都要列入**，班數為 0 也要
-5. **不要忽略 `*;N` / `N;*` 的前後綴變體**：`休;N`、`國;N`、`N;休`、`N;國` 都算大夜整班；`休;E`、`國;E`、`E;休`、`E;國` 都算小夜整班（D011）；`JD`、`休;JD`、`國;JD`、`JD;休`、`JD;國` 都**無條件**算小夜半班（D012）；`ED`、`休;ED`、`國;ED`、`ED;休`、`ED;國` 都**無條件**算小夜半班（D013）
+5. **不要忽略 `*;N` / `N;*` 的前後綴變體**：`休;N`、`國;N`、`N;休`、`N;國` 都算大夜整班；`休;E`、`國;E`、`E;休`、`E;國` 都算小夜整班（D011）；`JD`、`休;JD`、`國;JD`、`JD;休`、`JD;國` 都**無條件**算小夜半班（D012）；`ED`、`休;ED`、`國;ED`、`ED;休`、`ED;國` 都**無條件**算小夜半班（D013）；`FD`、`休;FD`、`國;FD`、`FD;休`、`FD;國` 都**無條件**算小夜半班（D018）
 6. **不要忽略 HD / ND**：`HD`（含 `休;HD`、`國;HD`、`HD;休`、`HD;國`）**無條件**算小夜半班（D014）；`ND`（含 `休;ND`、`國;ND`、`ND;休`、`ND;國`）**當日**算小夜半班、**隔日**算大夜整班（D015）；月底 ND 因 day+1 已超出本月，本月清冊**不外溢**到下個月
 7. **不要把 `E(請)` 一律算半班**：必須先檢查**下方一列同欄**是否有 `21:00~24:00`、`20:00~24:00` 或 `16:00~20:00` 任一字串（D017）；都沒有代表整班沒上，不計入
 8. **不要忽略大夜整班的 `00:00~08:00` 標記**：`N`/`休;N`/`國;N` 若下方同欄有 `00:00~08:00` 代表整班請假，**不列入計算**
@@ -88,6 +88,8 @@ def classify(code: str, below_note: str) -> tuple[str | None, int]:
         return ('E_half', 1)  # D013：ED 班 08-12/16-20，後段 4 小時屬小夜半
     if code in ('HD', '休;HD', '國;HD', 'HD;休', 'HD;國'):
         return ('E_half', 1)  # D014：HD 車班 08-20，17-20 屬小夜時段
+    if code in ('FD', '休;FD', '國;FD', 'FD;休', 'FD;國'):
+        return ('E_half', 1)  # D018：FD 班 08-12/17-21，後段 4 小時屬小夜半
     if code in ('ND', '休;ND', '國;ND', 'ND;休', 'ND;國'):
         # D015：當日小夜半 + 隔日大夜整；隔日 N_full 須由呼叫端透過
         # nd_carryover_days set 在 day+1 補上，月底自然不外溢
@@ -301,4 +303,27 @@ row 4, 6, 8, 10, ...: 對應人員的補休備註列
 - **module worker**：Pyodide 314 已移除 classic worker（`importScripts`）支援，worker 必須是 `type: 'module'`＋`import { loadPyodide } from './vendor/pyodide/pyodide.mjs'`
 - **Netlify MCP 的 deploy 代理不能用**（14MB 上傳一律 400，疑似函式 payload 上限），改用**本機已登入的 Netlify CLI** 直接部署
 - **`test_wasm.mjs` 的 openpyxl／et_xmlfile 走 `micropip emfs:` 裝 dist 實體 wheel**：Node 版 loader 不從 `indexURL` 取 lockfile 之外的 wheel（瀏覽器才走該路徑，已由 `test_browser.mjs` 實證），但仍確保測到的就是出貨的那份 bytes
+
+---
+
+## 維護紀錄：D018 FD 班（2026-07-28）
+
+**完成**：
+- `FD`（含 `休;FD`、`國;FD`、`FD;休`、`FD;國`）**無條件**算小夜半班，比照 JD／ED／HD，寫入 `src/classifier.py`（HD 分支之後、ND 分支之前）
+- 回應了 D012／D013 掛了近三個月的「FD 規則未定」待觀察，兩處已就地加上「已由 D018 解決」交叉引用（原句保留不改寫）
+- 測試 106 → **111**（新增 5 個 FD 變體 parametrize case）；WASM 97 → **102**
+- 已走完 README 維護 SOP 六步並上線，線上 `vendor/src.zip` 已實測含 FD 規則
+
+**基線變動（重要）**：
+- **11504 / 115年4月：NT$ 39,800 → NT$ 40,000**，小夜半班 11 → 12。該月排班表第 23 日有 1 筆 `FD`，過去被靜默忽略
+- 11501／11502／11503 無 FD，基線完全不變
+
+**未完成**：
+- 尚未 commit（`dist/version.json` 的版本字串為 `dcd4d0e-dirty`）。commit 後若要讓版本戳記乾淨，需重跑 build 與 deploy
+- v1.1 候選不變：去 pandas 瘦身、未知班別代碼警告。**本次正好證明後者有價值**：FD 存在於資料中卻被無聲忽略近三個月，有未知代碼警告就會當場被抓到
+
+**下次接力重點**：
+- 排班表表尾列出的分段班（`BC`／`ED`／`FD`）規則至此全部底定：BC 純白班不計、ED 與 FD 皆為小夜半班
+- FD 全專案僅 1 筆樣本，日後若出現群集或 `FD(請)` 變體需回頭核對
+- 零津貼人員維持全員列入（D003 未變更，2026-07-28 由 Lin 再次確認）
 
