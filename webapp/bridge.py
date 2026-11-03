@@ -59,6 +59,15 @@ def parse_and_classify(filename: str) -> str:
                 }
                 for c in counts
             ],
+            # D020：需護理長人工確認的班次（不影響計數）
+            'review_flags': sorted(
+                (
+                    {'name': c.name, 'day': f.day, 'code': f.code, 'note': f.note,
+                     'message': f.message}
+                    for c in counts for f in c.review_flags
+                ),
+                key=lambda x: (x['day'], x['name']),
+            ),
         },
     }, ensure_ascii=False)
 

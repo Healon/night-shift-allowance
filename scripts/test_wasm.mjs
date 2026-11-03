@@ -87,9 +87,12 @@ console.log('[ok] 套件載入（openpyxl / et_xmlfile 來自 dist 實體 wheel�
 // mount the repo test bed
 const MOUNT = [
   'src/__init__.py', 'src/builder.py', 'src/classifier.py', 'src/config.py', 'src/main.py', 'src/parser.py',
+  'src/shift_hours.py',
   'tests/__init__.py', 'tests/conftest.py', 'tests/test_parser.py', 'tests/test_classifier.py', 'tests/test_builder.py',
+  'tests/test_shift_hours.py',
   `tests/fixtures/${FIXTURE}`, 'tests/fixtures/11501-N19W01排班表.xls',
   'tests/fixtures/11502-N19W01排班表.xls', 'tests/fixtures/11504-N18W01排班表.xls',
+  'tests/fixtures/11510-N08W01排班表.xlsx',
   'templates/衛生福利部夜班津貼示範.xlsx',
 ];
 for (const dir of ['/proj/src', '/proj/tests/fixtures', '/proj/templates', '/app', '/work']) {
@@ -105,7 +108,8 @@ import os, sys, pytest
 os.chdir('/proj')
 sys.path.insert(0, '/proj')
 pytest.main(['-q', '--no-header', '-p', 'no:cacheprovider',
-             'tests/test_parser.py', 'tests/test_classifier.py', 'tests/test_builder.py'])
+             'tests/test_parser.py', 'tests/test_classifier.py', 'tests/test_builder.py',
+             'tests/test_shift_hours.py'])
 `);
 if (rc !== 0) fail(`pytest exit code ${rc}`);
 console.log('[ok] pytest 全綠（WASM）');
@@ -133,6 +137,20 @@ assert len(staff) == 23, len(staff)
 assert (tot['E_full'], tot['E_half'], tot['N_full'], tot['N_half']) == (80, 12, 88, 0), tot
 amount = tot['E_full']*400 + tot['E_half']*200 + tot['N_full']*600 + tot['N_half']*300
 assert amount == 87200, amount
+assert r['preview']['review_flags'] == [], r['preview']['review_flags']
+
+# D020：11510 含 E(請) 16-17:40／16-19、N( 請) 04-08 與 3 筆需確認班次
+D020 = '11510-N08W01排班表.xlsx'
+shutil.copy(f'/proj/tests/fixtures/{D020}', f'/work/{D020}')
+r20 = json.loads(bridge.parse_and_classify(D020))
+assert r20['ok'], r20
+t20 = {k: sum(s[k] for s in r20['preview']['staff']) for k in ('E_full', 'E_half', 'N_full', 'N_half')}
+assert (t20['E_full'], t20['E_half'], t20['N_full'], t20['N_half']) == (71, 3, 90, 1), t20
+assert [(f['name'], f['day']) for f in r20['preview']['review_flags']] == \
+    [('人員K', 8), ('人員M', 12), ('人員M', 21)], r20['preview']['review_flags']
+# 回復 11503 狀態供下方 build 驗證
+r = json.loads(bridge.parse_and_classify('${FIXTURE}'))
+assert r['ok'], r
 
 b = json.loads(bridge.build(json.dumps({'E_full': 500, 'E_half': 200, 'N_full': 600, 'N_half': 300})))
 assert b['ok'], b

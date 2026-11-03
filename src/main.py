@@ -48,6 +48,13 @@ def main(argv: list[str] | None = None) -> int:
         f'({len(schedule.staff)}人) 預估總額 NT$ {total:,}'
     )
     print(f'[OK] 產出 → {out}')
+
+    flags = [(c.name, f) for c in counts for f in c.review_flags]
+    if flags:
+        print(f'[注意] 共 {len(flags)} 筆班次需要人工確認（D020）：')
+        for name, f in sorted(flags, key=lambda x: (x[1].day, x[0])):
+            print(f'  - {schedule.month}/{f.day} {name} [{f.code}] {f.note}')
+            print(f'      {f.message}')
     return 0
 
 

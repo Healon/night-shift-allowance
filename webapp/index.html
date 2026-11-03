@@ -93,6 +93,30 @@
   #preview { display: none; margin-top: 1.5rem; }
   #preview.show { display: block; }
   #preview-title { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; }
+  #review {
+    display: none;
+    margin: 0 0 1rem;
+    padding: 0.9rem 1.1rem;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    color: #78350f;
+    font-size: 0.9rem;
+  }
+  #review.show { display: block; }
+  #review h3 { margin: 0 0 0.35rem; font-size: 0.98rem; }
+  #review .review-hint { margin: 0 0 0.6rem; }
+  #review ol { margin: 0; padding-left: 1.3rem; }
+  #review li { margin-bottom: 0.55rem; }
+  #review .review-head { font-weight: 600; }
+  #review .review-note {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #fef3c7;
+    padding: 0 0.3rem;
+    border-radius: 4px;
+    word-break: break-all;
+  }
+  #review .review-msg { display: block; overflow-wrap: anywhere; }
   .rates-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -211,6 +235,11 @@
 
     <section id="preview">
       <h2 id="preview-title"></h2>
+      <div id="review" role="alert">
+        <h3 id="review-title"></h3>
+        <p class="review-hint">以下班次不在既定規則內，系統已依說明先行計算。請核對原始排班表；若需修正，改好排班表後重新上傳即可。</p>
+        <ol id="review-list"></ol>
+      </div>
       <div class="rates-grid">
         <div class="rate-field">
           <label for="rate-e-full">小夜整班（元/班）</label>
@@ -248,6 +277,7 @@
       <li>排班表全程在你的瀏覽器內運算，<strong>不會上傳到任何伺服器</strong></li>
       <li>清冊檔名依排班表內的年份、月份與病房名稱自動產生</li>
       <li>費率預設 400／200／600／300，可於下載前調整，只影響本次產出</li>
+      <li>小夜（16:00–24:00）、大夜（00:00–08:00）請假時，扣除請假時段後實際上班滿 4 小時即算半班；不符既定規則的班次會以黃色區塊提醒確認</li>
       <li>身分證字號、填表人、連絡電話留空，請在下載後手動填入</li>
       <li>首次開啟需下載計算引擎（約 14MB），之後瀏覽器會快取，開啟即用</li>
     </ul>
