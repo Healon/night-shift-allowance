@@ -48,33 +48,34 @@ def _anomaly_notes(assessment) -> list[str]:
     return notes
 
 
-def _classify_partial_leave(shift: str, note: str) -> tuple[bool, str | None]:
-    """`E(請)`／`N(請)`：回傳（是否算半班, 需確認訊息或 None）。"""
+def _anomaly_flag(a, level: str | None) -> str | None:
+    """有異常（時段超出班別、標示時數不符）時組出提醒訊息，否則回傳 None。"""
+    anomalies = _anomaly_notes(a)
+    if not anomalies:
+        return None
+    label = SHIFT_LABELS[a.shift]
+    result = f'已列入{label}半班' if level == 'half' else '未列入'
+    return (f'{"；".join(anomalies)}。依時段計算實際上班 '
+            f'{format_minutes(a.worked_minutes)}，{result}；請確認排班表是否需要修正')
+
+
+def _classify_by_hours(shift: str, note: str, is_leave_code: bool) -> tuple[str | None, str | None]:
+    """依實際工時判定班別等級（D020／D021），回傳（'full'／'half'／None, 需確認訊息或 None）。
+
+    - 實際工時 = 班別時段 − 與請假時段重疊的部分（`src/shift_hours.py`）
+    - 滿 8 小時 → 整班；≥ 4 小時 → 半班；未滿 4 小時 → 不計
+    - `E(請)`／`N(請)` 本身就是請假班別，最多只算半班
+    """
     a = assess_leave(shift, note)
     label = SHIFT_LABELS[shift]
     if a.worked_minutes is None:
-        return False, f'{label}請假但下方未標示請假時段，無法計算實際工時，未列入；請確認是否整班請假'
-    counted = a.worked_minutes >= HALF_SHIFT_MIN_MINUTES
-    anomalies = _anomaly_notes(a)
-    if not anomalies:
-        return counted, None
-    result = f'已列入{label}半班' if counted else '未列入'
-    return counted, (f'{"；".join(anomalies)}。依時段計算實際上班 '
-                     f'{format_minutes(a.worked_minutes)}，{result}；請確認排班表是否需要修正')
-
-
-def _full_shift_leave(shift: str, note: str) -> tuple[bool, str | None]:
-    """整班代碼：回傳（是否排除（整班請假）, 需確認訊息或 None）。"""
-    a = assess_leave(shift, note)
-    if a.worked_minutes is None or a.worked_minutes == shift_minutes(shift):
-        return False, None  # 無請假，或請假時段與本班無關（例：白班時段）
-    if a.worked_minutes == 0:
-        return True, None   # 整班請假（D010／D016）
-    label = SHIFT_LABELS[shift]
-    verdict = (f'改算{label}半班' if a.worked_minutes >= HALF_SHIFT_MIN_MINUTES else '不列入')
-    return False, (f'{label}整班代碼，但下方有部分時段請假（請假 {format_minutes(a.leave_minutes)}、'
-                   f'實際上班 {format_minutes(a.worked_minutes)}）。目前仍以{label}整班計算；'
-                   f'若班別應為 {shift}(請)，將{verdict}，請確認排班表')
+        if is_leave_code:
+            return None, f'{label}請假但下方未標示請假時段，無法計算實際工時，未列入；請確認是否整班請假'
+        return 'full', None  # 整班代碼且無請假時段
+    if not is_leave_code and a.worked_minutes == shift_minutes(shift):
+        return 'full', None  # 請假時段與本班無關（例：白班時段），不提醒
+    level = 'half' if a.worked_minutes >= HALF_SHIFT_MIN_MINUTES else None
+    return level, _anomaly_flag(a, level)
 
 
 def classify_shifts(staff: StaffRecord) -> ShiftCount:
@@ -88,19 +89,19 @@ def classify_shifts(staff: StaffRecord) -> ShiftCount:
         # 來自前一日 ND 的大夜整班 carryover（D015），需在當日分類前先補上
         if day in nd_carryover_days:
             result.N_full_days.append(day)
-        if code in N_FULL_CODES or code in E_FULL_CODES:
-            # 整班：扣完請假剩 0 → 整班請假不列入（D010／D016）；
-            # 只請部分時段 → 仍算整班，但列入提醒（D020）
-            shift = 'N' if code in N_FULL_CODES else 'E'
-            excluded, flag_message = _full_shift_leave(shift, note)
-            if not excluded:
-                (result.N_full_days if shift == 'N' else result.E_full_days).append(day)
-        elif code in LEAVE_CODES:
-            # D020：班別時段扣除請假時段，實際上班 ≥ 4 小時 → 半班
-            shift = LEAVE_CODES[code]
-            counted, flag_message = _classify_partial_leave(shift, note)
-            if counted:
-                (result.N_half_days if shift == 'N' else result.E_half_days).append(day)
+        if code in N_FULL_CODES or code in E_FULL_CODES or code in LEAVE_CODES:
+            # D020／D021：班別時段扣除下方請假時段後的實際工時決定等級
+            # 整班代碼：滿 8h 整班／≥4h 半班／<4h 不計（整班請假即 0h，D010／D016）
+            # E(請)／N(請)：≥4h 半班／<4h 不計
+            if code in LEAVE_CODES:
+                shift, is_leave_code = LEAVE_CODES[code], True
+            else:
+                shift, is_leave_code = ('N' if code in N_FULL_CODES else 'E'), False
+            level, flag_message = _classify_by_hours(shift, note, is_leave_code)
+            if level is not None:
+                bucket = {('E', 'full'): result.E_full_days, ('E', 'half'): result.E_half_days,
+                          ('N', 'full'): result.N_full_days, ('N', 'half'): result.N_half_days}
+                bucket[(shift, level)].append(day)
         elif code in ('JD', '休;JD', '國;JD', 'JD;休', 'JD;國'):
             # JD 班 09-13/17-21，後段 17-21 共 4 小時屬小夜時段，視為小夜半班（D012）
             result.E_half_days.append(day)
