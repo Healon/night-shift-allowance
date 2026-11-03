@@ -28,7 +28,7 @@
 
 - **Sprint**：03 已完成（2026-07-15）— 靜態網頁上線
 - **網頁版**：<https://night-shift-roster.netlify.app>（Netlify site id `ea169e5c-d053-4f7c-b1de-96b5450feaf8`）
-- **下一步**：D020 已 commit，**待本機跑 build → test_wasm → test_browser → deploy 上線**。v1.1 候選 — 去 pandas 瘦身（未知班別代碼警告已由 **D019 裁定不做**；D020 的提醒只限夜班請假情境）
+- **下一步**：D020 已通過 build／test_wasm／test_browser，**只差 deploy 上線**（PR Healon/night-shift-allowance#1）。v1.1 候選 — 去 pandas 瘦身（未知班別代碼警告已由 **D019 裁定不做**；D020 的提醒只限夜班請假情境）
 - **維護 SOP**：見 README「維護 SOP」節（改 src → pytest → test_wasm → build → test_browser → deploy）
 - **已驗證基線**：
   - 11501 / 115年1月 → NT$ 88,200
@@ -39,7 +39,7 @@
 - **端到端（CLI）**：`python -m src.main tests/fixtures/11503-N19W01排班表.xls`
 - **端到端（本機 Web）**：`uvicorn web.app:app --port 8000` → `http://localhost:8000` 拖放排班表自動下載
 - **端到端（網頁版）**：`node scripts/test_browser.mjs [網址]`（省略網址則自動起本機 dist 伺服器）
-- **測試**：本機 pytest 162/162 綠（parser 9 / classifier 102 / shift_hours 28 / builder 14 / web 9）；WASM 預期 153 條（`node scripts/test_wasm.mjs`，不含 web 那 9 條 FastAPI 測試）——**D020 後尚未實跑**，見下方維護紀錄
+- **測試**：本機 pytest 162/162 綠（parser 9 / classifier 102 / shift_hours 28 / builder 14 / web 9）；WASM 153/153 綠（`node scripts/test_wasm.mjs`，不含 web 那 9 條 FastAPI 測試）；`test_browser.mjs` 全數通過（2026-11-03，雲端容器）
 
 ---
 
@@ -344,8 +344,14 @@ row 4, 6, 8, 10, ...: 對應人員的補休備註列
 - 11510：NT$ 82,600 → **83,300**（小夜半 +2、大夜半 +1）
 
 **未完成（重要）**：
-- 開發容器的網路政策擋 `cdn.jsdelivr.net`，`build_webapp.py` 無法下載 Pyodide，**`dist/` 未重建、`test_wasm`／`test_browser` 未實跑、網頁版尚未上線**。請在本機依 README 維護 SOP 跑 build → test_wasm → test_browser → deploy
+- **網頁版尚未上線**：build（版本 `9068d37`）、`test_wasm`（153 綠）、`test_browser`（含 D020 斷言）已於雲端容器開放網路後全數通過；部署需要 Netlify 權杖，該 session 讀不到，待補 deploy
 - 待護理長核對：11510 人員K 10/8、人員M 10/21 是整班 `E` 只請部分（目前各算 400），以及 `休假4(16:00~17:40)` 的時數不符
+
+**雲端容器跑驗收的注意事項**（本機 Mac 不需要）：
+- `test_wasm.mjs` 要加 `NODE_USE_ENV_PROXY=1`，否則 Node 內建 fetch 不走代理，pytest 等套件下載失敗
+- `test_browser.mjs` 要加 `LANG=C.UTF-8 LC_ALL=C.UTF-8`：容器未設語系時，Playwright 上傳中文檔名的 fixture 會靜默失敗（檔案沒進 input，卡在等預覽）
+- 專案釘 Playwright 1.61.1（找 headless shell 1228），容器預裝的是 1243：另建一個瀏覽器目錄，放 `chromium_headless_shell-1228` 連結指向 `/opt/pw-browsers/chromium_headless_shell-1243`，再以 `PLAYWRIGHT_BROWSERS_PATH` 指過去；不要改測試腳本
+- `test_browser.mjs` 的下載檔驗證用 `.venv/bin/python`，容器內可用 `python3 -m venv --system-site-packages .venv` 建立
 
 **下次接力重點**：
 - 新請假時段不必再改程式，只要時段寫在備註裡就會自動計算；新增的是「規則外情況」時才回到 DECISION_LOG
