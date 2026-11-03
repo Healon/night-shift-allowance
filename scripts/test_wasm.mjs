@@ -139,15 +139,15 @@ amount = tot['E_full']*400 + tot['E_half']*200 + tot['N_full']*600 + tot['N_half
 assert amount == 87200, amount
 assert r['preview']['review_flags'] == [], r['preview']['review_flags']
 
-# D020：11510 含 E(請) 16-17:40／16-19、N( 請) 04-08 與 3 筆需確認班次
+# D020／D021：11510 含 E(請) 16-17:40／16-19、N( 請) 04-08；整班 E 部分請假不足 4h 不計；1 筆需確認班次
 D020 = '11510-N08W01排班表.xlsx'
 shutil.copy(f'/proj/tests/fixtures/{D020}', f'/work/{D020}')
 r20 = json.loads(bridge.parse_and_classify(D020))
 assert r20['ok'], r20
 t20 = {k: sum(s[k] for s in r20['preview']['staff']) for k in ('E_full', 'E_half', 'N_full', 'N_half')}
-assert (t20['E_full'], t20['E_half'], t20['N_full'], t20['N_half']) == (71, 3, 90, 1), t20
+assert (t20['E_full'], t20['E_half'], t20['N_full'], t20['N_half']) == (69, 3, 90, 1), t20
 assert [(f['name'], f['day']) for f in r20['preview']['review_flags']] == \
-    [('人員K', 8), ('人員M', 12), ('人員M', 21)], r20['preview']['review_flags']
+    [('人員M', 12)], r20['preview']['review_flags']
 # 回復 11503 狀態供下方 build 驗證
 r = json.loads(bridge.parse_and_classify('${FIXTURE}'))
 assert r['ok'], r

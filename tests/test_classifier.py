@@ -261,12 +261,20 @@ def test_E_variants_with_full_leave_marker_are_excluded(code):
     assert result.N_full_days == []
 
 
-def test_E_without_full_leave_marker_still_counts():
-    # 其他時段的備註不應誤觸排除（16-17 與小夜重疊 → 仍算整班，但列入提醒，D020）
+def test_E_with_leave_mostly_outside_window_counts_by_hours_and_flags():
+    # D021：08-17 只有 16-17 與小夜重疊 → 實際上 7h → 小夜半；時段超出小夜 → 提醒
     staff = _make_staff({14: 'E'}, notes={14: '補假8(08:00~17:00)'})
     result = classify_shifts(staff)
-    assert result.E_full_days == [14]
+    assert result.E_full_days == []
+    assert result.E_half_days == [14]
     assert [f.day for f in result.review_flags] == [14]
+
+
+def test_full_shift_with_unrelated_day_leave_stays_full_without_flag():
+    # 請假時段與本班完全不重疊（白班時段）→ 實際上滿 8h → 整班，不提醒
+    result = classify_shifts(_make_staff({3: 'N'}, notes={3: '補假8(08:00~17:00)'}))
+    assert result.N_full_days == [3]
+    assert result.review_flags == []
 
 
 # --- D017: E(請) 半班 marker 擴充（20:00~24:00 / 16:00~20:00） ---
@@ -359,21 +367,22 @@ def test_N_qing_with_range_outside_window_is_flagged():
     assert [f.day for f in result.review_flags] == [11]
 
 
-# --- D020：整班代碼底下只請部分時段 → 維持整班，但提醒護理長確認 ---
+# --- D021：整班代碼底下只請部分時段 → 同樣依實際工時判定（滿 8h 整班／≥4h 半班／<4h 不計） ---
 
-@pytest.mark.parametrize('code, note, field', [
-    ('E', '補假5(16:00~21:00)', 'E_full_days'),     # 11510 人員K 10/8，實際上 3h
-    ('E', '補假7(17:00~24:00)', 'E_full_days'),     # 11510 人員M 10/21，實際上 1h
-    ('休;E', '補假4(20:00~24:00)', 'E_full_days'),
-    ('N', '補假1(00:00~01:00)', 'N_full_days'),     # 11504 林睿芸 4/26，實際上 7h
-    ('N;國', '補假4(04:00~08:00)', 'N_full_days'),
+@pytest.mark.parametrize('code, note, expected', [
+    ('E', '補假5(16:00~21:00)', {}),                        # 11510 人員K 10/8，實際上 3h → 不計
+    ('E', '補假7(17:00~24:00)', {}),                        # 11510 人員M 10/21，實際上 1h → 不計
+    ('休;E', '補假4(20:00~24:00)', {'E_half_days': [9]}),    # 實際上 4h（門檻）→ 小夜半
+    ('E;國', '補假3(21:00~24:00)', {'E_half_days': [9]}),    # 實際上 5h → 小夜半
+    ('N', '補假1(00:00~01:00)', {'N_half_days': [9]}),       # 11504 林睿芸 4/26，實際上 7h → 大夜半
+    ('N;國', '補假4(04:00~08:00)', {'N_half_days': [9]}),    # 實際上 4h → 大夜半
+    ('休;N', '補假5(00:00~05:00)', {}),                      # 實際上 3h → 不計
 ])
-def test_full_shift_with_partial_leave_keeps_full_but_flags(code, note, field):
+def test_full_shift_with_partial_leave_counts_by_worked_hours(code, note, expected):
     result = classify_shifts(_make_staff({9: code}, notes={9: note}))
-    assert getattr(result, field) == [9]
-    assert len(result.review_flags) == 1
-    flag = result.review_flags[0]
-    assert (flag.day, flag.code, flag.note) == (9, code, note)
+    for field in ('E_full_days', 'E_half_days', 'N_full_days', 'N_half_days'):
+        assert getattr(result, field) == expected.get(field, []), field
+    assert result.review_flags == []   # 已是既定規則，不再提醒
 
 
 def test_full_shift_whole_leave_is_excluded_without_flag():
@@ -447,9 +456,11 @@ def test_grand_totals_match_baseline(fixture_xls_path):
     ('11501-N19W01排班表.xls', 66, 21, 96, 88_200),
     ('11502-N19W01排班表.xls', 56,  6, 78, 70_400),
     ('11503-N19W01排班表.xls', 80, 12, 88, 87_200),
-    ('11504-N18W01排班表.xls', 49, 12, 30, 40_000),
+    # D021：林睿芸 4/26 N + 補假1(00:00~01:00) 實際上 7h → 大夜整改大夜半
+    ('11504-N18W01排班表.xls', 49, 12, 29, 39_700),
     # D020 新增：E(請) 16-19、16-17:40 各 +1 小夜半；N( 請) 04-08 +1 大夜半
-    ('11510-N08W01排班表.xlsx', 71,  3, 90, 83_300),
+    # D021：人員K 10/8、人員M 10/21 整班 E 實際上不到 4h → 不計（小夜整 -2）
+    ('11510-N08W01排班表.xlsx', 69,  3, 90, 82_500),
 ])
 def test_monthly_baselines(
     fixture_name, expected_e_full, expected_e_half, expected_n_full, expected_total
@@ -467,14 +478,14 @@ def test_monthly_baselines(
         (expected_e_full, expected_e_half, expected_n_full, expected_total)
 
 
-# D020：各月提醒筆數基線（11501～11503 無異常；11504 林睿芸 4/26；
-# 11510 人員M 10/12 時數不符、人員K 10/8 與人員M 10/21 整班部分請假）
+# D020／D021：各月提醒筆數基線（整班部分請假自 D021 起依工時判定，不再提醒；
+# 只剩 11510 人員M 10/12 標示時數與時段不符）
 @pytest.mark.parametrize('fixture_name, expected_flags', [
     ('11501-N19W01排班表.xls', []),
     ('11502-N19W01排班表.xls', []),
     ('11503-N19W01排班表.xls', []),
-    ('11504-N18W01排班表.xls', [('林睿芸', 26)]),
-    ('11510-N08W01排班表.xlsx', [('人員K', 8), ('人員M', 12), ('人員M', 21)]),
+    ('11504-N18W01排班表.xls', []),
+    ('11510-N08W01排班表.xlsx', [('人員M', 12)]),
 ])
 def test_monthly_review_flags(fixture_name, expected_flags):
     from tests.conftest import PROJECT_ROOT

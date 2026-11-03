@@ -125,23 +125,23 @@ await page.waitForFunction(() =>
   document.querySelector('#preview-foot').textContent.includes('NT$'));
 console.log('[ok] 錯誤路徑：白話提示後不需重新整理即可重試');
 
-// D020：11510 含需人工確認班次 → 黃色提醒區列出 3 筆，大夜半計入
+// D020／D021：11510 → 黃色提醒區列出 1 筆（S29 時數不符），大夜半計入
 await page.fill('#rate-e-full', '400');
 await page.setInputFiles('#file-input', FIXTURE_D020);
 await page.waitForFunction(() =>
   document.querySelector('#preview-title').textContent.includes('115 年 10 月'), null, { timeout: 60000 });
 await page.waitForFunction(() =>
-  document.querySelector('#preview-foot').textContent.includes('NT$ 83,300'));
+  document.querySelector('#preview-foot').textContent.includes('NT$ 82,500'));
 if (!(await page.isVisible('#review'))) fail('11510 應顯示「需要確認」提醒區');
 const reviewItems = await page.locator('#review-list li').allTextContents();
-if (reviewItems.length !== 3) fail(`提醒筆數 ${reviewItems.length} != 3：${reviewItems.join(' | ')}`);
-if (!reviewItems[1].includes('10/12 人員M') || !reviewItems[1].includes('休假4(16:00~17:40)')) {
-  fail(`S29 提醒內容不符：${reviewItems[1]}`);
+if (reviewItems.length !== 1) fail(`提醒筆數 ${reviewItems.length} != 1：${reviewItems.join(' | ')}`);
+if (!reviewItems[0].includes('10/12 人員M') || !reviewItems[0].includes('休假4(16:00~17:40)')) {
+  fail(`S29 提醒內容不符：${reviewItems[0]}`);
 }
 if (process.env.NSA_SCREENSHOT) {
   await page.locator('#preview').screenshot({ path: process.env.NSA_SCREENSHOT });
 }
-console.log('[ok] D020：11510 合計 NT$ 83,300、提醒區列出 3 筆需確認班次');
+console.log('[ok] D020／D021：11510 合計 NT$ 82,500、提醒區列出 1 筆需確認班次');
 
 // AC4: zero external requests
 if (externalRequests.length) fail('出現外部請求：\n' + externalRequests.join('\n'));
