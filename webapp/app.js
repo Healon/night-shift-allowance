@@ -11,6 +11,9 @@
   const previewTitle = document.getElementById('preview-title');
   const previewBody = document.getElementById('preview-body');
   const previewFoot = document.getElementById('preview-foot');
+  const review = document.getElementById('review');
+  const reviewTitle = document.getElementById('review-title');
+  const reviewList = document.getElementById('review-list');
   const downloadBtn = document.getElementById('download-btn');
   const versionFooter = document.getElementById('version-footer');
 
@@ -110,6 +113,29 @@
     preview.classList.add('show');
   }
 
+  // D020：需護理長人工確認的班次（不影響計數，只提醒）
+  function renderReview(meta) {
+    const flags = meta.review_flags || [];
+    reviewList.replaceChildren();
+    review.classList.toggle('show', flags.length > 0);
+    if (flags.length === 0) return;
+    reviewTitle.textContent = '⚠️ 有 ' + flags.length + ' 筆班次需要確認';
+    for (const f of flags) {
+      const li = document.createElement('li');
+      const head = document.createElement('span');
+      head.className = 'review-head';
+      head.textContent = meta.month + '/' + f.day + ' ' + f.name + '　班別 ' + f.code + '　';
+      const note = document.createElement('span');
+      note.className = 'review-note';
+      note.textContent = f.note || '（無備註）';
+      const msg = document.createElement('span');
+      msg.className = 'review-msg';
+      msg.textContent = f.message;
+      li.append(head, note, msg);
+      reviewList.appendChild(li);
+    }
+  }
+
   function recalcAmounts() {
     const rates = currentRates();
     downloadBtn.disabled = busy || staffRows.length === 0 || !rates;
@@ -166,6 +192,7 @@
     staffRows = msg.preview.staff;
     clearStatus();
     renderPreview(msg.preview);
+    renderReview(msg.preview);
   }
 
   downloadBtn.addEventListener('click', () => {

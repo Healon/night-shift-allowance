@@ -15,6 +15,7 @@ const PORT = 8791;
 const TARGET = process.argv[2];
 const BASE = (TARGET || `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
 const FIXTURE = path.join(ROOT, 'tests', 'fixtures', '11503-N19W01排班表.xls');
+const FIXTURE_D020 = path.join(ROOT, 'tests', 'fixtures', '11510-N08W01排班表.xlsx');
 const EXPECT_NAME = '11503-N19W01_夜班費清冊_11病房.xlsx';
 
 const fail = (msg) => {
@@ -80,6 +81,7 @@ if (rowCount !== 23) fail(`預覽人數列 ${rowCount} != 23`);
 const foot = await page.textContent('#preview-foot');
 if (!foot.includes('NT$ 87,200')) fail(`合計列缺 87,200：${foot}`);
 console.log('[ok] 預覽：23 人、合計 NT$ 87,200');
+if (await page.isVisible('#review')) fail('11503 不應出現「需要確認」提醒區');
 
 // AC5: change E_full rate to 500 → live total 95,200
 await page.fill('#rate-e-full', '500');
@@ -122,6 +124,24 @@ await page.waitForSelector('#preview.show', { timeout: 60000 });
 await page.waitForFunction(() =>
   document.querySelector('#preview-foot').textContent.includes('NT$'));
 console.log('[ok] 錯誤路徑：白話提示後不需重新整理即可重試');
+
+// D020：11510 含需人工確認班次 → 黃色提醒區列出 3 筆，大夜半計入
+await page.fill('#rate-e-full', '400');
+await page.setInputFiles('#file-input', FIXTURE_D020);
+await page.waitForFunction(() =>
+  document.querySelector('#preview-title').textContent.includes('115 年 10 月'), null, { timeout: 60000 });
+await page.waitForFunction(() =>
+  document.querySelector('#preview-foot').textContent.includes('NT$ 83,300'));
+if (!(await page.isVisible('#review'))) fail('11510 應顯示「需要確認」提醒區');
+const reviewItems = await page.locator('#review-list li').allTextContents();
+if (reviewItems.length !== 3) fail(`提醒筆數 ${reviewItems.length} != 3：${reviewItems.join(' | ')}`);
+if (!reviewItems[1].includes('10/12 人員M') || !reviewItems[1].includes('休假4(16:00~17:40)')) {
+  fail(`S29 提醒內容不符：${reviewItems[1]}`);
+}
+if (process.env.NSA_SCREENSHOT) {
+  await page.locator('#preview').screenshot({ path: process.env.NSA_SCREENSHOT });
+}
+console.log('[ok] D020：11510 合計 NT$ 83,300、提醒區列出 3 筆需確認班次');
 
 // AC4: zero external requests
 if (externalRequests.length) fail('出現外部請求：\n' + externalRequests.join('\n'));

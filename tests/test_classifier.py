@@ -237,15 +237,17 @@ def test_E_qing_with_marker_is_half_evening():
     assert result.E_full_days == []
 
 
-def test_E_qing_without_marker_is_not_counted():
+def test_E_qing_with_range_mostly_outside_window_counts_by_hours_and_flags():
+    # D020：08-17 只有 16-17 跟小夜重疊 → 實際上 7h ≥ 4h → 小夜半，但時段超出小夜要提醒
     staff = _make_staff(
         {8: 'E(請)'},
         notes={8: '補假8(08:00~17:00)'},
     )
     result = classify_shifts(staff)
-    assert result.E_half_days == []
+    assert result.E_half_days == [8]
     assert result.E_full_days == []
     assert result.N_full_days == []
+    assert [f.day for f in result.review_flags] == [8]
 
 
 # --- D016: E 整班請假（下方備註含 16:00~24:00）→ 不計 ---
@@ -260,9 +262,11 @@ def test_E_variants_with_full_leave_marker_are_excluded(code):
 
 
 def test_E_without_full_leave_marker_still_counts():
-    # 其他時段的備註不應誤觸排除
+    # 其他時段的備註不應誤觸排除（16-17 與小夜重疊 → 仍算整班，但列入提醒，D020）
     staff = _make_staff({14: 'E'}, notes={14: '補假8(08:00~17:00)'})
-    assert classify_shifts(staff).E_full_days == [14]
+    result = classify_shifts(staff)
+    assert result.E_full_days == [14]
+    assert [f.day for f in result.review_flags] == [14]
 
 
 # --- D017: E(請) 半班 marker 擴充（20:00~24:00 / 16:00~20:00） ---
@@ -294,13 +298,90 @@ def test_other_codes_are_ignored(code):
     assert result.N_half_days == []
 
 
-def test_N_half_always_empty_in_v1():
-    # N(請) + 21:00~24:00 → per DECISION_LOG D008, explicitly unsupported
-    staff = _make_staff(
-        {11: 'N(請)'},
-        notes={11: '補假3(21:00~24:00)'},
-    )
-    assert classify_shifts(staff).N_half_days == []
+# --- D020：E(請)／N(請) 以「班別時段扣除請假後實際工時 ≥ 4 小時」判定半班 ---
+
+@pytest.mark.parametrize('note', [
+    '補假3(21:00~24:00)',   # 上 16-21，5h
+    '補假4(20:00~24:00)',   # 上 16-20，4h（剛好門檻）
+    '補假4(16:00~20:00)',   # 上 20-24，4h
+    '補假3(16:00~19:00)',   # 上 19-24，5h（11510 人員K 10/31）
+])
+def test_E_qing_with_at_least_4_hours_worked_is_half_evening(note):
+    result = classify_shifts(_make_staff({20: 'E(請)'}, notes={20: note}))
+    assert result.E_half_days == [20]
+    assert result.E_full_days == []
+    assert result.review_flags == []
+
+
+def test_E_qing_S29_case_counts_and_flags_stated_hours_mismatch():
+    # 11510 人員M 10/12：休假4(16:00~17:40) → 上 17:40-24:00 共 6h20m → 小夜半
+    # 但「休假4」與時段長度 1h40m 不符 → 提醒護理長確認
+    result = classify_shifts(_make_staff({12: 'E(請)'}, notes={12: '休假4(16:00~17:40)'}))
+    assert result.E_half_days == [12]
+    assert len(result.review_flags) == 1
+    assert '1 小時 40 分' in result.review_flags[0].message
+
+
+def test_E_qing_with_less_than_4_hours_worked_is_not_counted():
+    # 請 16-21 → 只上 21-24 共 3h → 不計，屬規則內結果不提醒
+    result = classify_shifts(_make_staff({5: 'E(請)'}, notes={5: '補假5(16:00~21:00)'}))
+    assert result.E_half_days == []
+    assert result.E_full_days == []
+    assert result.review_flags == []
+
+
+def test_E_qing_without_time_range_is_not_counted_and_flagged():
+    result = classify_shifts(_make_staff({6: 'E(請)'}, notes={6: ''}))
+    assert result.E_half_days == []
+    assert [f.day for f in result.review_flags] == [6]
+
+
+@pytest.mark.parametrize('code', ['N(請)', 'N( 請)', 'N（請）'])
+def test_N_qing_with_at_least_4_hours_worked_is_half_night(code):
+    # 11510 人員K 10/17：N( 請) + 補假4(04:00~08:00) → 上 00-04 共 4h → 大夜半
+    result = classify_shifts(_make_staff({17: code}, notes={17: '補假4(04:00~08:00)'}))
+    assert result.N_half_days == [17]
+    assert result.N_full_days == []
+    assert result.review_flags == []
+
+
+def test_N_qing_with_less_than_4_hours_worked_is_not_counted():
+    result = classify_shifts(_make_staff({11: 'N(請)'}, notes={11: '補假5(00:00~05:00)'}))
+    assert result.N_half_days == []
+    assert result.N_full_days == []
+    assert result.review_flags == []
+
+
+def test_N_qing_with_range_outside_window_is_flagged():
+    # 21-24 不在大夜時段 → 依公式實際上 8h 仍只算半班，但提醒確認
+    result = classify_shifts(_make_staff({11: 'N(請)'}, notes={11: '補假3(21:00~24:00)'}))
+    assert result.N_half_days == [11]
+    assert [f.day for f in result.review_flags] == [11]
+
+
+# --- D020：整班代碼底下只請部分時段 → 維持整班，但提醒護理長確認 ---
+
+@pytest.mark.parametrize('code, note, field', [
+    ('E', '補假5(16:00~21:00)', 'E_full_days'),     # 11510 人員K 10/8，實際上 3h
+    ('E', '補假7(17:00~24:00)', 'E_full_days'),     # 11510 人員M 10/21，實際上 1h
+    ('休;E', '補假4(20:00~24:00)', 'E_full_days'),
+    ('N', '補假1(00:00~01:00)', 'N_full_days'),     # 11504 林睿芸 4/26，實際上 7h
+    ('N;國', '補假4(04:00~08:00)', 'N_full_days'),
+])
+def test_full_shift_with_partial_leave_keeps_full_but_flags(code, note, field):
+    result = classify_shifts(_make_staff({9: code}, notes={9: note}))
+    assert getattr(result, field) == [9]
+    assert len(result.review_flags) == 1
+    flag = result.review_flags[0]
+    assert (flag.day, flag.code, flag.note) == (9, code, note)
+
+
+def test_full_shift_whole_leave_is_excluded_without_flag():
+    result = classify_shifts(_make_staff({1: 'E', 2: 'N'},
+                                         notes={1: '補假8(16:00~24:00)', 2: '休假8(00:00~08:00)'}))
+    assert result.E_full_days == []
+    assert result.N_full_days == []
+    assert result.review_flags == []
 
 
 def test_days_are_sorted_ascending():
@@ -367,6 +448,8 @@ def test_grand_totals_match_baseline(fixture_xls_path):
     ('11502-N19W01排班表.xls', 56,  6, 78, 70_400),
     ('11503-N19W01排班表.xls', 80, 12, 88, 87_200),
     ('11504-N18W01排班表.xls', 49, 12, 30, 40_000),
+    # D020 新增：E(請) 16-19、16-17:40 各 +1 小夜半；N( 請) 04-08 +1 大夜半
+    ('11510-N08W01排班表.xlsx', 71,  3, 90, 83_300),
 ])
 def test_monthly_baselines(
     fixture_name, expected_e_full, expected_e_half, expected_n_full, expected_total
@@ -382,3 +465,20 @@ def test_monthly_baselines(
     total = e_full * 400 + e_half * 200 + n_full * 600 + n_half * 300
     assert (e_full, e_half, n_full, total) == \
         (expected_e_full, expected_e_half, expected_n_full, expected_total)
+
+
+# D020：各月提醒筆數基線（11501～11503 無異常；11504 林睿芸 4/26；
+# 11510 人員M 10/12 時數不符、人員K 10/8 與人員M 10/21 整班部分請假）
+@pytest.mark.parametrize('fixture_name, expected_flags', [
+    ('11501-N19W01排班表.xls', []),
+    ('11502-N19W01排班表.xls', []),
+    ('11503-N19W01排班表.xls', []),
+    ('11504-N18W01排班表.xls', [('林睿芸', 26)]),
+    ('11510-N08W01排班表.xlsx', [('人員K', 8), ('人員M', 12), ('人員M', 21)]),
+])
+def test_monthly_review_flags(fixture_name, expected_flags):
+    from tests.conftest import PROJECT_ROOT
+    schedule = parse_schedule(PROJECT_ROOT / 'tests' / 'fixtures' / fixture_name)
+    flags = sorted((c.name, f.day) for c in map(classify_shifts, schedule.staff)
+                   for f in c.review_flags)
+    assert flags == expected_flags
